@@ -1,0 +1,11 @@
+# Pinned upstream quiche version for Quiche.NET native builds.
+#
+# Policy: pin an exact release tag AND its commit SHA. quiche is 0.x, so
+# minor releases may change the C API; a bump is a deliberate change that
+# also re-runs the P/Invoke diff (step 2 of the roadmap) and gets a
+# CHANGELOG entry. Never float on "latest".
+#
+# Verified 2026-10-28 via: gh api repos/cloudflare/quiche/releases/latest
+QUICHE_TAG=0.30.0
+QUICHE_COMMIT=be47c5011215b9f13bad06bd7627d3ae49888a19
+QUICHE_REPO=https://github.com/cloudflare/quiche.git
