@@ -94,6 +94,18 @@ if ((Test-Path "$LlvmBin\libclang.dll") -and (-not $env:LIBCLANG_PATH)) {
     Write-Host "LIBCLANG_PATH set to $LlvmBin"
 }
 
+# Windows ARM64: pin the VS generator platform. boring-sys's native
+# Windows cmake invocation leaves CMAKE_GENERATOR_PLATFORM unset, so
+# the generator defaults to x64 and BoringSSL selects x86_64 assembly
+# for an aarch64 target (see native/win-arm64-toolchain.cmake).
+if ($Rid -eq 'win-arm64') {
+    $ToolchainFile = Join-Path $ScriptDir 'win-arm64-toolchain.cmake'
+    if (Test-Path $ToolchainFile) {
+        $env:CMAKE_TOOLCHAIN_FILE = $ToolchainFile
+        Write-Host "CMAKE_TOOLCHAIN_FILE set to $ToolchainFile"
+    }
+}
+
 # --- Build --------------------------------------------------------------------
 Write-Host "cargo build --release -p quiche --features ffi --target $CargoTarget"
 cargo build --release -p quiche --features ffi --target $CargoTarget `

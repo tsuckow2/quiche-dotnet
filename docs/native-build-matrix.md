@@ -70,9 +70,22 @@ failure changed the design above:
   LLVM install when present). `build.sh` refuses Windows RIDs and
   points at `build.ps1`, so the two paths cannot diverge silently.
 - **Windows ARM64 picked x86_64 assembly.** `msvc-dev-cmd` defaults
-  to `arch: x64` even on ARM runners, so BoringSSL's cmake built
-  `aes-gcm-avx2-x86_64-apple.obj` for an aarch64 target and the link
-  failed with LNK1181. Fix: `arch: arm64` for the win-arm64 cell.
+  to `arch: x64` even on ARM runners, so the first suspicion was the
+  MSVC environment. Fixing that (`arch: arm64` for the win-arm64
+  cell, verified in the log: LIB/INCLUDE point at ARM64 dirs) did NOT
+  fix it: BoringSSL's cmake still built `aes-gcm-avx2-x86_64-apple.obj`
+  for an aarch64 target. Root cause is one layer deeper: boring-sys's
+  native Windows cmake invocation never sets CMAKE_GENERATOR_PLATFORM,
+  so the Visual Studio generator defaults to x64 regardless of the
+  vcvars environment. Attempted fix: `native/win-arm64-toolchain.cmake`
+  (CMAKE_SYSTEM_PROCESSOR + CMAKE_GENERATOR_PLATFORM = ARM64, plus the
+  MSVC runtime library boring-sys skips when a toolchain file is set),
+  applied automatically by `build.ps1` for win-arm64 via the
+  CMAKE_TOOLCHAIN_FILE environment variable that boring-sys and the
+  `cmake` crate both honor. Decided by the next CI run; if it does not
+  work, win-arm64 joins musl-arm64 as deferred, with the remaining
+  options being an upstream boring-sys fix or OPENSSL_NO_ASM (correct
+  but slower: no assembly crypto).
 - **musl C++ compiler does not exist (musl-x64).** With `CC=musl-gcc`,
   boring-sys's cmake derives `CMAKE_CXX_COMPILER=x86_64-linux-musl-g++`,
   which musl-tools does not ship, so cmake configure fails. Fix: musl
@@ -159,8 +172,9 @@ the port-sharing test in step 4.
 
 - `linux-x64`: built and verified locally and in CI 2026-10-28.
 - `linux-arm64`: built and verified in CI 2026-10-28.
-- `win-x64`, `win-arm64`: moved to `build.ps1` under PowerShell;
-  awaiting the CI re-run.
+- `win-x64`: green in CI 2026-10-28 via `build.ps1`.
+- `win-arm64`: `build.ps1` works, but BoringSSL's cmake selects
+  x86_64 assembly; the toolchain-file fix is awaiting the CI re-run.
 - `linux-musl-x64`: zigbuild works, but rustc drops cdylib; the
   `-crt-static` re-enable is awaiting the CI re-run.
 - `linux-musl-arm64`: deferred (rustc cdylib limitation, above).
