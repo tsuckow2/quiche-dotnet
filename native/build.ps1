@@ -123,7 +123,11 @@ if ($BoringLicense) {
 $Symbols = @('quiche_config_new', 'quiche_conn_new_with_tls', 'quiche_version', 'quiche_conn_send', 'quiche_conn_recv')
 $Dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
 if ($Dumpbin) {
-    $Exports = & dumpbin /exports (Join-Path $OutDir $Lib) 2>$null
+    # Join to a single string FIRST: -match/-notmatch on a string array
+    # act as filters (returning the non-matching lines), which is
+    # truthy whenever any line lacks the symbol -- i.e. always. On a
+    # scalar string they return a boolean, which is what the check needs.
+    $Exports = (& dumpbin /exports (Join-Path $OutDir $Lib) 2>$null) -join "`n"
     foreach ($Sym in $Symbols) {
         if ($Exports -notmatch [regex]::Escape($Sym)) {
             throw "FATAL: $Lib does not export $Sym"
