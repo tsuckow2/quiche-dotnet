@@ -35,13 +35,18 @@ packaging are under active development. See the roadmap below.
 
 ## Roadmap
 
-1. **Native build matrix (CI):** quiche built as a shared library for
-   `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`,
-   `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, `osx-arm64`,
-   published as runtime packages consumed via `runtimes/<rid>/native/`.
-   Design: [docs/native-build-matrix.md](docs/native-build-matrix.md);
-   build script: `native/build.sh`; CI: `.github/workflows/native.yml`.
-   `linux-x64` is proven locally; the other cells are exercised by CI.
+1. **Native build matrix (CI):** ✅ quiche 0.30.0 built as a shared
+   library for `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`,
+   `linux-musl-x64`, `osx-x64`, `osx-arm64` -- all 7 cells green in
+   CI (2026-10-28), each smoke-checked for the core C API symbols
+   and staged with quiche + BoringSSL license texts. `linux-musl-arm64`
+   is deferred: rustc drops `cdylib` for that target (see the design
+   doc). Design: [docs/native-build-matrix.md](docs/native-build-matrix.md);
+   build scripts: `native/build.sh` (Unix) and `native/build.ps1`
+   (Windows); CI: `.github/workflows/native.yml`. Known
+   per-cell notes: `win-arm64` builds with `OPENSSL_NO_ASM` (C crypto,
+   same API) because BoringSSL's Windows ARM64 assembly path is broken
+   in this toolchain combination -- see the design doc.
 2. **P/Invoke layer:** thin, generated-or-handwritten signatures over
    quiche's C API, pinned to a specific quiche version.
 3. **Managed API:** `QuicConnection`, `QuicStream`, listener + dialer
