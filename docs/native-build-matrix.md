@@ -84,13 +84,26 @@ failure changed the design above:
   selection: the same x86_64 .obj LNK1181 recurred, so the VS platform
   appears to be locked before the toolchain file is read. That file
   has been removed; the attempt is recorded here, not left as dead code.
-  Attempted fix 2 (current): build BoringSSL with the Ninja generator
-  for win-arm64 (`CMAKE_GENERATOR=Ninja` in `build.ps1`, ninja
-  installed by CI). Ninja has no platform concept, so the arch
-  detection can only follow the ARM64 compiler. If that also fails,
-  win-arm64 joins musl-arm64 as deferred, with the remaining options
-  being an upstream boring-sys fix or OPENSSL_NO_ASM (correct but
-  slower: no assembly crypto).
+  Attempted fix 2: build BoringSSL with the Ninja generator for
+  win-arm64 (`CMAKE_GENERATOR=Ninja` in `build.ps1`, ninja installed
+  by CI). Ninja itself was PROVEN correct at the configure level: the
+  log shows ARM64 cl.exe detected as the C, C++, and ASM compiler.
+  But configure then failed on a different, precisely diagnosed issue:
+  the `cmake` crate passes `-DCMAKE_MSVC_RUNTIME_LIBRARY=
+  MultiThreadedDLL` unconditionally, and under Ninja CMake validates
+  it against the MSVC "assembler" and rejects it
+  ("MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not known for this
+  ASM compiler"). The VS generator never validates it, which is why
+  win-x64 and the earlier VS win-arm64 runs got past configure.
+  Attempted fix 3 (current): keep Ninja and add
+  `native/win-arm64-toolchain.cmake` setting
+  `CMAKE_POLICY_DEFAULT_CMP0194=NEW` -- the documented toolchain-file
+  mechanism -- so CMake uses the real ARM64 assembler (armasm64.exe)
+  instead of MSVC-as-assembler, and the runtime-library property no
+  longer applies to the ASM compiler. If that also fails, win-arm64
+  joins musl-arm64 as deferred, with the remaining options being an
+  upstream boring-sys fix or OPENSSL_NO_ASM (correct but slower: no
+  assembly crypto).
 - **musl C++ compiler does not exist (musl-x64).** With `CC=musl-gcc`,
   boring-sys's cmake derives `CMAKE_CXX_COMPILER=x86_64-linux-musl-g++`,
   which musl-tools does not ship, so cmake configure fails. Fix: musl
@@ -179,8 +192,11 @@ the port-sharing test in step 4.
 - `linux-arm64`: built and verified in CI 2026-10-28.
 - `win-x64`: green in CI 2026-10-28 via `build.ps1`.
 - `win-arm64`: `build.ps1` works, but BoringSSL's cmake selects
-  x86_64 assembly under the VS generator; the toolchain-file fix was
-  tried and failed, the Ninja-generator fix is awaiting the CI re-run.
+  x86_64 assembly under the VS generator; the platform-pinning
+  toolchain file was tried and failed, the Ninja generator was proven
+  correct at compiler detection but hit a CMP0194/MSVC_RUNTIME_LIBRARY
+  configure error, and the CMP0194-NEW policy fix is awaiting the CI
+  re-run.
 - `linux-musl-x64`: zigbuild works, but rustc drops cdylib; the
   `-crt-static` re-enable is awaiting the CI re-run.
 - `linux-musl-arm64`: deferred (rustc cdylib limitation, above).
