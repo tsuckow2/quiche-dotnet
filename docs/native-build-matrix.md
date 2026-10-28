@@ -28,11 +28,11 @@ means the build matrix is the project's problem, never the consumer's.
 
 | RID | CI runner | Rust target | Toolchain notes |
 | --- | --- | --- | --- |
-| `win-x64` | `windows-latest` | `x86_64-pc-windows-msvc` | MSVC env via `msvc-dev-cmd`; NASM via Chocolatey (BoringSSL requirement); cargo's linker pinned to MSVC's `link.exe` (see below) |
-| `win-arm64` | `windows-11-arm` | `aarch64-pc-windows-msvc` | Native ARM64 runner — no cross-linking; `msvc-dev-cmd` MUST get `arch: arm64` (see below) |
+| `win-x64` | `windows-latest` | `x86_64-pc-windows-msvc` | MSVC env via `msvc-dev-cmd`; NASM via Chocolatey (BoringSSL requirement); built by `native/build.ps1` under PowerShell (see below) |
+| `win-arm64` | `windows-11-arm` | `aarch64-pc-windows-msvc` | Native ARM64 runner — no cross-linking; `msvc-dev-cmd` MUST get `arch: arm64` (see below); built by `native/build.ps1` under PowerShell |
 | `linux-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | Default toolchain; **proven locally and in CI 2026-10-28** |
 | `linux-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | Native ARM64 runner — no cross-linking; **proven in CI 2026-10-28** |
-| `linux-musl-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-musl` | `cargo-zigbuild` + Zig 0.15.1 (see below) |
+| `linux-musl-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-musl` | `cargo-zigbuild` + Zig 0.15.1, plus `-C target-feature=-crt-static` to re-enable cdylib (see below) |
 | `osx-x64` | `macos-15` (arm64) | `x86_64-apple-darwin` | Cross-compiled from the ARM runner with the same macOS SDK — clang handles both archs; dylib is NOT stripped (see below) |
 | `osx-arm64` | `macos-15` (arm64) | `aarch64-apple-darwin` | Native; dylib is NOT stripped (see below) |
 
@@ -54,11 +54,21 @@ The first matrix run went 2/8: `linux-x64` and `linux-arm64` passed;
 the other six failed in setup/toolchain, never in quiche itself. Each
 failure changed the design above:
 
-- **Windows `link.exe` shadowing (both win cells).** The build step
-  runs under Git Bash, and Git for Windows' Unix `link` shadows MSVC's
-  linker in PATH (`/usr/bin/link: extra operand`). Fix: `build.sh`
-  pins cargo's linker to MSVC's `link.exe` via `VCToolsInstallDir`
-  (converted with `cygpath` under Git Bash), bypassing PATH entirely.
+- **Windows under Git Bash: two failures, one decision (both win
+  cells).** First, Git for Windows' Unix `link` shadows MSVC's
+  linker in PATH (`/usr/bin/link: extra operand` — a caveat
+  `msvc-dev-cmd`'s own README documents). Pinning cargo's linker to
+  MSVC's `link.exe` fixed that, and exposed the second: MSVC's linker
+  then failed with LNK1181 `cannot open input file 'kernel32.lib'`,
+  because MSYS2's environment conversion mangles vcvarsall's
+  semicolon-separated LIB/INCLUDE on the way to the toolchain.
+  Rather than fight both from bash, Windows builds moved to
+  `native/build.ps1` under PowerShell, where `msvc-dev-cmd`'s
+  environment reaches cargo unchanged and `link.exe` resolves to
+  MSVC's (the script still pins the linker via `VCToolsInstallDir`
+  as belt-and-braces, and points `LIBCLANG_PATH` at the Chocolatey
+  LLVM install when present). `build.sh` refuses Windows RIDs and
+  points at `build.ps1`, so the two paths cannot diverge silently.
 - **Windows ARM64 picked x86_64 assembly.** `msvc-dev-cmd` defaults
   to `arch: x64` even on ARM runners, so BoringSSL's cmake built
   `aes-gcm-avx2-x86_64-apple.obj` for an aarch64 target and the link
@@ -77,6 +87,18 @@ failure changed the design above:
 - **musl-arm64: rustc drops cdylib** (see deferred note above). No
   toolchain fix exists at this layer; the cell is out until rustc
   supports it.
+- **musl-x64, second failure: rustc drops cdylib here too.** The
+  zigbuild run (Zig 0.15.1 resolved, cargo-zigbuild 0.24.0 installed,
+  BoringSSL compiled under zig) ended with the same warning as
+  musl-arm64: `dropping unsupported crate type 'cdylib' for target
+  'x86_64-unknown-linux-musl'`, and cargo "finished" with no `.so`.
+  Root cause is the same layer, not the toolchain: musl targets
+  default to a static CRT, and cdylib requires dynamic linking.
+  Attempted fix: `build.sh` passes `-C target-feature=-crt-static`
+  for musl targets only (via `CARGO_TARGET_<TRIPLE>_RUSTFLAGS`, so
+  host build scripts are untouched). Whether that restores cdylib is
+  decided by the next CI run; if it does not, musl-x64 joins
+  musl-arm64 as deferred, and the matrix ships 6 cells.
 
 ## What the build script does
 
@@ -137,9 +159,10 @@ the port-sharing test in step 4.
 
 - `linux-x64`: built and verified locally and in CI 2026-10-28.
 - `linux-arm64`: built and verified in CI 2026-10-28.
-- `win-x64`, `win-arm64`, `linux-musl-x64`, `osx-x64`, `osx-arm64`:
-  fixes for their first-run failures are in this branch; awaiting the
-  CI re-run.
+- `win-x64`, `win-arm64`: moved to `build.ps1` under PowerShell;
+  awaiting the CI re-run.
+- `linux-musl-x64`: zigbuild works, but rustc drops cdylib; the
+  `-crt-static` re-enable is awaiting the CI re-run.
 - `linux-musl-arm64`: deferred (rustc cdylib limitation, above).
 
 ## Local proof (linux-x64, 2026-10-28)

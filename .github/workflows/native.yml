@@ -89,7 +89,16 @@ jobs:
         if: startsWith(matrix.runner, 'ubuntu')
         run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake libclang-dev
 
+      # Windows builds run under PowerShell via build.ps1, NOT under
+      # Git Bash: bash shadows link.exe and mangles LIB/INCLUDE (see
+      # native/build.ps1 header). All other RIDs use build.sh.
+      - name: Build quiche for ${{ matrix.rid }} (Windows)
+        if: startsWith(matrix.runner, 'windows')
+        shell: pwsh
+        run: .\native\build.ps1 -Rid ${{ matrix.rid }}
+
       - name: Build quiche for ${{ matrix.rid }}
+        if: "!startsWith(matrix.runner, 'windows')"
         shell: bash
         run: bash native/build.sh ${{ matrix.rid }}
 

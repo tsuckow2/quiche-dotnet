@@ -88,40 +88,34 @@ echo "quiche $QUICHE_TAG @ $QUICHE_COMMIT verified"
 # musl-gcc: a silently impure "musl" binary (glibc libstdc++ linked in)
 # would be worse than a loud failure.
 #
-# Windows targets: rustc resolves link.exe through PATH, and under Git
-# Bash on the CI runners Git for Windows' Unix `link` shadows MSVC's
-# linker ("extra operand" failure, CI 2026-10-28). Bypass PATH entirely
-# by pointing cargo at MSVC's link.exe via VCToolsInstallDir, which
-# msvc-dev-cmd exports. Converted with cygpath when running under Git
-# Bash so cargo (a Windows binary) gets a Windows path.
+# Windows targets are NOT built by this script: use native/build.ps1
+# under PowerShell instead. Running cargo under Git Bash breaks twice
+# over (Git's Unix `link` shadows MSVC's link.exe in PATH, and MSYS2's
+# environment conversion mangles vcvarsall's LIB/INCLUDE, producing
+# LNK1181 "cannot open input file 'kernel32.lib'"). Both were seen in
+# CI 2026-10-28; the PowerShell path avoids the entire class.
+if [[ "$RID" == win-* ]]; then
+  echo "FATAL: Windows RIDs are built with native/build.ps1 under PowerShell, not this script" >&2
+  exit 2
+fi
+
 if [[ "$RID" == linux-musl-* ]]; then
   if ! command -v cargo-zigbuild >/dev/null 2>&1; then
     echo "FATAL: musl builds require cargo-zigbuild (see docs/native-build-matrix.md)" >&2
     exit 1
   fi
+  # rustc drops cdylib for musl targets by default ("dropping unsupported
+  # crate type `cdylib`", seen on both musl archs in CI 2026-10-28):
+  # musl targets default to a static CRT, and cdylib needs dynamic
+  # linking. -C target-feature=-crt-static re-enables it, scoped to
+  # this target only via CARGO_TARGET_<TRIPLE>_RUSTFLAGS so host build
+  # scripts are untouched.
+  RUSTFLAGS_VAR="CARGO_TARGET_${CARGO_TARGET^^}_RUSTFLAGS"
+  RUSTFLAGS_VAR="${RUSTFLAGS_VAR//-/_}"
+  export "$RUSTFLAGS_VAR=-C target-feature=-crt-static"
+  echo "musl cdylib re-enable: $RUSTFLAGS_VAR=${!RUSTFLAGS_VAR}"
   echo "cargo zigbuild --release -p quiche --features ffi --target $CARGO_TARGET"
   cargo zigbuild --release -p quiche --features ffi --target "$CARGO_TARGET" \
-    --manifest-path "$QUICHE_DIR/Cargo.toml"
-elif [[ "$RID" == win-* ]]; then
-  if [[ -n "${VCToolsInstallDir:-}" ]]; then
-    if command -v cygpath >/dev/null 2>&1; then
-      VC_DIR="$(cygpath -w "$VCToolsInstallDir")"
-    else
-      VC_DIR="$VCToolsInstallDir"
-    fi
-    case "$RID" in
-      win-x64)   HOST_ARCH="Hostx64/x64" ;;
-      win-arm64) HOST_ARCH="Hostarm64/arm64" ;;
-    esac
-    LINKER_VAR="CARGO_TARGET_${CARGO_TARGET^^}_LINKER"
-    LINKER_VAR="${LINKER_VAR//-/_}"
-    export "$LINKER_VAR=$VC_DIR/bin/$HOST_ARCH/link.exe"
-    echo "Windows linker pinned: ${!LINKER_VAR}"
-  else
-    echo "WARNING: VCToolsInstallDir unset; linker resolves via PATH (Git's link.exe may shadow MSVC's)" >&2
-  fi
-  echo "cargo build --release -p quiche --features ffi --target $CARGO_TARGET"
-  cargo build --release -p quiche --features ffi --target "$CARGO_TARGET" \
     --manifest-path "$QUICHE_DIR/Cargo.toml"
 else
   echo "cargo build --release -p quiche --features ffi --target $CARGO_TARGET"
