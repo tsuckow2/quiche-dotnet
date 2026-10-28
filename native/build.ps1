@@ -105,9 +105,32 @@ if ((Test-Path "$LlvmBin\libclang.dll") -and (-not $env:LIBCLANG_PATH)) {
 # this build is native (host == target), so boring-sys skips that
 # define and this file supplies it. Cost is scoped to win-arm64: C
 # crypto instead of assembly crypto, same API and wire behavior.
+# One more win-arm64-only quirk: boring-sys runs bindgen after the
+# cmake build, and bindgen needs an ARM64 libclang.dll -- the
+# runner's LLVM (choco) is x86-64 and bindgen rejects it ("invalid
+# DLL (x86-64)"). Visual Studio's own LLVM component for ARM64
+# ships one; point bindgen at it.
 if ($Rid -eq 'win-arm64') {
     $env:CMAKE_TOOLCHAIN_FILE = (Join-Path $ScriptDir 'win-arm64-toolchain.cmake')
     Write-Host 'CMAKE_TOOLCHAIN_FILE set for win-arm64 (OPENSSL_NO_ASM)'
+    $Arm64LlvmBin = $null
+    if ($env:VCToolsInstallDir) {
+        $ToolsDir = Split-Path (Split-Path $env:VCToolsInstallDir.TrimEnd('\') -Parent) -Parent
+        $Candidate = Join-Path $ToolsDir 'Llvm\ARM64\bin'
+        if (Test-Path (Join-Path $Candidate 'libclang.dll')) { $Arm64LlvmBin = $Candidate }
+    }
+    if (-not $Arm64LlvmBin) {
+        $Found = Get-ChildItem -ErrorAction SilentlyContinue `
+            "$env:ProgramFiles\Microsoft Visual Studio\*\*\VC\Tools\Llvm\ARM64\bin\libclang.dll" |
+            Select-Object -First 1
+        if ($Found) { $Arm64LlvmBin = $Found.DirectoryName }
+    }
+    if ($Arm64LlvmBin) {
+        $env:LIBCLANG_PATH = $Arm64LlvmBin
+        Write-Host "LIBCLANG_PATH set to $Arm64LlvmBin"
+    } else {
+        Write-Host 'WARNING: no ARM64 libclang.dll found; bindgen will likely fail'
+    }
 }
 
 # --- Build --------------------------------------------------------------------

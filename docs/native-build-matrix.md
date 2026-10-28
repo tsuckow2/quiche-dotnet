@@ -115,16 +115,25 @@ failure changed the design above:
   `-AARM64` for aarch64 targets, so the VS generator platform was
   ARM64 all along; BoringSSL's own perlasm flavor selection chose
   x86_64 anyway. The generator was never the problem.
-  Attempted fix 5 (current): return to the default VS generator and
-  set `OPENSSL_NO_ASM=YES` in `native/win-arm64-toolchain.cmake`.
+  Attempted fix 5: return to the default VS generator and set
+  `OPENSSL_NO_ASM=YES` in `native/win-arm64-toolchain.cmake`.
   This is boring-sys's own remedy for Windows targets it considers
   cross-compiled -- it just never applies here, because boring-sys
   skips its whole cross-compilation block when host == target, and
   this build is native. With no ASM language enabled, neither the
   perlasm flavor bug nor the MSVC_RUNTIME_LIBRARY validation can
   fire. Cost is scoped to win-arm64: C crypto instead of assembly
-  crypto, same API and wire behavior. If that also fails, win-arm64
-  joins musl-arm64 as deferred, with the remaining option being an
+  crypto, same API and wire behavior. This WORKED: BoringSSL built
+  its ssl and crypto targets under VS/ARM64. The run then failed at
+  a new, trivial step: boring-sys runs bindgen after the cmake
+  build, and bindgen needs an ARM64 libclang.dll -- the runner's
+  LLVM (choco) is x86-64 and bindgen rejects it ("invalid DLL
+  (x86-64)").
+  Attempted fix 6 (current): `build.ps1` sets `LIBCLANG_PATH` for
+  win-arm64 to Visual Studio's own LLVM ARM64 bin dir (found via
+  VCToolsInstallDir, with a VS-install glob fallback), which ships
+  an ARM64 libclang.dll. If that also fails, win-arm64 joins
+  musl-arm64 as deferred, with the remaining option being an
   upstream boring-sys fix.
 - **musl C++ compiler does not exist (musl-x64).** With `CC=musl-gcc`,
   boring-sys's cmake derives `CMAKE_CXX_COMPILER=x86_64-linux-musl-g++`,
@@ -213,13 +222,15 @@ the port-sharing test in step 4.
 - `linux-x64`: built and verified locally and in CI 2026-10-28.
 - `linux-arm64`: built and verified in CI 2026-10-28.
 - `win-x64`: green in CI 2026-10-28 via `build.ps1`.
-- `win-arm64`: `build.ps1` works, but BoringSSL's Windows ARM64
-  assembly path is broken in this toolchain combination (VS picks
-  x86_64 asm despite -AARM64; Ninja hits a MSVC_RUNTIME_LIBRARY
-  generate error that neither a CMP0194 policy default nor an
-  explicit armasm64 compiler fixes). The cell now builds with
-  OPENSSL_NO_ASM via the toolchain file -- C crypto, same API --
-  awaiting the CI re-run.
+- `win-arm64`: `build.ps1` works. BoringSSL's Windows ARM64 assembly
+  path is broken in this toolchain combination (VS picks x86_64 asm
+  despite -AARM64; Ninja hits a MSVC_RUNTIME_LIBRARY generate error
+  that neither a CMP0194 policy default nor an explicit armasm64
+  compiler fixes), so the cell builds with OPENSSL_NO_ASM via the
+  toolchain file -- C crypto, same API -- and that worked: BoringSSL
+  built. The remaining blocker is bindgen needing an ARM64
+  libclang.dll (the runner's LLVM is x86-64); `build.ps1` now points
+  LIBCLANG_PATH at VS's own ARM64 LLVM dir, awaiting the CI re-run.
 - `linux-musl-x64`: zigbuild works, but rustc drops cdylib; the
   `-crt-static` re-enable is awaiting the CI re-run.
 - `linux-musl-arm64`: deferred (rustc cdylib limitation, above).
