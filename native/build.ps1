@@ -94,16 +94,20 @@ if ((Test-Path "$LlvmBin\libclang.dll") -and (-not $env:LIBCLANG_PATH)) {
     Write-Host "LIBCLANG_PATH set to $LlvmBin"
 }
 
-# Windows ARM64: pin the VS generator platform. boring-sys's native
-# Windows cmake invocation leaves CMAKE_GENERATOR_PLATFORM unset, so
-# the generator defaults to x64 and BoringSSL selects x86_64 assembly
-# for an aarch64 target (see native/win-arm64-toolchain.cmake).
+# Windows ARM64: build BoringSSL with the Ninja generator, not Visual
+# Studio. boring-sys's native Windows cmake invocation never sets
+# CMAKE_GENERATOR_PLATFORM, so the VS generator defaults to x64 and
+# BoringSSL selects x86_64 assembly for an aarch64 target (LNK1181 on
+# the missing x86_64 .obj). A toolchain file pinning GENERATOR_PLATFORM
+# to ARM64 was tried first (CI 2026-10-28) and did NOT change the
+# selection -- the platform appears to be locked before the toolchain
+# file is read. Ninja has no platform concept: CMake derives the
+# target from the compiler, and the compiler is ARM64 cl.exe from the
+# arch: arm64 vcvars environment, so the arch detection has only one
+# possible answer. (Ninja itself is installed by CI; see native.yml.)
 if ($Rid -eq 'win-arm64') {
-    $ToolchainFile = Join-Path $ScriptDir 'win-arm64-toolchain.cmake'
-    if (Test-Path $ToolchainFile) {
-        $env:CMAKE_TOOLCHAIN_FILE = $ToolchainFile
-        Write-Host "CMAKE_TOOLCHAIN_FILE set to $ToolchainFile"
-    }
+    $env:CMAKE_GENERATOR = 'Ninja'
+    Write-Host 'CMAKE_GENERATOR set to Ninja for win-arm64'
 }
 
 # --- Build --------------------------------------------------------------------
