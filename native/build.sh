@@ -78,18 +78,56 @@ fi
 echo "quiche $QUICHE_TAG @ $QUICHE_COMMIT verified"
 
 # --- Build ------------------------------------------------------------------
-# musl targets: boring-sys builds BoringSSL's C code with cmake; it must
-# see the musl compiler, not the host gcc, or the result links glibc.
-# CI sets MUSL_CC (musl-gcc for the host arch); default to plain musl-gcc.
+# musl targets: built with cargo-zigbuild, not plain cargo + musl-gcc.
+# musl-gcc alone cannot do this job: boring-sys's cmake step derives a
+# C++ compiler named <triple>-g++ (e.g. x86_64-linux-musl-g++) that
+# musl-tools does not provide, so the cmake configure fails before any
+# code compiles (seen in CI 2026-10-28). Zig supplies a musl C and C++
+# toolchain (zig cc / zig c++) that cargo-zigbuild wires up as the
+# target compiler and linker. There is deliberately no fallback to
+# musl-gcc: a silently impure "musl" binary (glibc libstdc++ linked in)
+# would be worse than a loud failure.
+#
+# Windows targets: rustc resolves link.exe through PATH, and under Git
+# Bash on the CI runners Git for Windows' Unix `link` shadows MSVC's
+# linker ("extra operand" failure, CI 2026-10-28). Bypass PATH entirely
+# by pointing cargo at MSVC's link.exe via VCToolsInstallDir, which
+# msvc-dev-cmd exports. Converted with cygpath when running under Git
+# Bash so cargo (a Windows binary) gets a Windows path.
 if [[ "$RID" == linux-musl-* ]]; then
-  MUSL_CC="${MUSL_CC:-musl-gcc}"
-  export CC="$MUSL_CC"
-  echo "musl build: CC=$CC"
+  if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+    echo "FATAL: musl builds require cargo-zigbuild (see docs/native-build-matrix.md)" >&2
+    exit 1
+  fi
+  echo "cargo zigbuild --release -p quiche --features ffi --target $CARGO_TARGET"
+  cargo zigbuild --release -p quiche --features ffi --target "$CARGO_TARGET" \
+    --manifest-path "$QUICHE_DIR/Cargo.toml"
+elif [[ "$RID" == win-* ]]; then
+  if [[ -n "${VCToolsInstallDir:-}" ]]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      VC_DIR="$(cygpath -w "$VCToolsInstallDir")"
+    else
+      VC_DIR="$VCToolsInstallDir"
+    fi
+    case "$RID" in
+      win-x64)   HOST_ARCH="Hostx64/x64" ;;
+      win-arm64) HOST_ARCH="Hostarm64/arm64" ;;
+    esac
+    LINKER_VAR="CARGO_TARGET_${CARGO_TARGET^^}_LINKER"
+    LINKER_VAR="${LINKER_VAR//-/_}"
+    export "$LINKER_VAR=$VC_DIR/bin/$HOST_ARCH/link.exe"
+    echo "Windows linker pinned: ${!LINKER_VAR}"
+  else
+    echo "WARNING: VCToolsInstallDir unset; linker resolves via PATH (Git's link.exe may shadow MSVC's)" >&2
+  fi
+  echo "cargo build --release -p quiche --features ffi --target $CARGO_TARGET"
+  cargo build --release -p quiche --features ffi --target "$CARGO_TARGET" \
+    --manifest-path "$QUICHE_DIR/Cargo.toml"
+else
+  echo "cargo build --release -p quiche --features ffi --target $CARGO_TARGET"
+  cargo build --release -p quiche --features ffi --target "$CARGO_TARGET" \
+    --manifest-path "$QUICHE_DIR/Cargo.toml"
 fi
-
-echo "cargo build --release -p quiche --features ffi --target $CARGO_TARGET"
-cargo build --release -p quiche --features ffi --target "$CARGO_TARGET" \
-  --manifest-path "$QUICHE_DIR/Cargo.toml"
 
 BUILT_LIB="$QUICHE_DIR/target/$CARGO_TARGET/release/$LIB"
 if [[ ! -f "$BUILT_LIB" ]]; then
@@ -104,9 +142,12 @@ cp "$BUILT_LIB" "$OUT_DIR/"
 
 # quiche's release profile keeps debuginfo (the unstripped .so is ~40 MB);
 # strip it for shipping. Dynamic symbols survive stripping, so the symbol
-# check below still validates the shipped artifact. Skipped on Windows,
-# where strip is not part of the standard toolchain.
-if [[ "$LIB" != *.dll ]] && command -v strip >/dev/null 2>&1; then
+# check below still validates the shipped artifact.
+# Linux only: macOS's strip refuses these dylibs ("symbols referenced by
+# indirect symbol table entries that can't be stripped", CI 2026-10-28),
+# and Windows has no strip in the standard toolchain. The macOS size
+# cost is accepted; dylibs do not carry DWARF the way Linux .so files do.
+if [[ "$LIB" == *.so ]] && command -v strip >/dev/null 2>&1; then
   strip "$OUT_DIR/$LIB"
   echo "stripped $LIB for shipping"
 fi

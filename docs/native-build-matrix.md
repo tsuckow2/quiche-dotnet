@@ -28,26 +28,55 @@ means the build matrix is the project's problem, never the consumer's.
 
 | RID | CI runner | Rust target | Toolchain notes |
 | --- | --- | --- | --- |
-| `win-x64` | `windows-latest` | `x86_64-pc-windows-msvc` | MSVC env via `msvc-dev-cmd`; NASM via Chocolatey (BoringSSL requirement) |
-| `win-arm64` | `windows-11-arm` | `aarch64-pc-windows-msvc` | Native ARM64 runner — no cross-linking |
-| `linux-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | Default toolchain; **proven locally 2026-10-28** |
-| `linux-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | Native ARM64 runner — no cross-linking |
-| `linux-musl-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-musl` | `musl-tools` from apt; `CC=musl-gcc` so BoringSSL's C code links musl, not glibc |
-| `linux-musl-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-musl` | `musl-tools` for the host arch on the ARM runner; same `CC=musl-gcc` rule |
-| `osx-x64` | `macos-15` (arm64) | `x86_64-apple-darwin` | Cross-compiled from the ARM runner with the same macOS SDK — clang handles both archs |
-| `osx-arm64` | `macos-15` (arm64) | `aarch64-apple-darwin` | Native |
+| `win-x64` | `windows-latest` | `x86_64-pc-windows-msvc` | MSVC env via `msvc-dev-cmd`; NASM via Chocolatey (BoringSSL requirement); cargo's linker pinned to MSVC's `link.exe` (see below) |
+| `win-arm64` | `windows-11-arm` | `aarch64-pc-windows-msvc` | Native ARM64 runner — no cross-linking; `msvc-dev-cmd` MUST get `arch: arm64` (see below) |
+| `linux-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | Default toolchain; **proven locally and in CI 2026-10-28** |
+| `linux-arm64` | `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | Native ARM64 runner — no cross-linking; **proven in CI 2026-10-28** |
+| `linux-musl-x64` | `ubuntu-24.04` | `x86_64-unknown-linux-musl` | `cargo-zigbuild` + Zig 0.15.1 (see below) |
+| `osx-x64` | `macos-15` (arm64) | `x86_64-apple-darwin` | Cross-compiled from the ARM runner with the same macOS SDK — clang handles both archs; dylib is NOT stripped (see below) |
+| `osx-arm64` | `macos-15` (arm64) | `aarch64-apple-darwin` | Native; dylib is NOT stripped (see below) |
+
+`linux-musl-arm64` is **deferred, not forgotten**: rustc 1.99 drops
+`cdylib` for `aarch64-unknown-linux-musl` (`warning: dropping
+unsupported crate type 'cdylib'`), so no shared library is produced at
+all. It returns if rustc gains cdylib support for that target, or if
+a hand-link recipe (staticlib + manual `.so` link) is proven. The
+matrix is 7 cells until then.
 
 Why native runners where they exist: cross-linking C dependencies
 (BoringSSL) is where native builds go wrong, and GitHub now provides
-ARM runners for all three OS families. The only cross compiles are
-`osx-x64` (same SDK, different arch — the safe kind) and the musl
-cells (same arch, different libc — contained by `CC=musl-gcc`).
+ARM runners for all three OS families. The only cross compile is
+`osx-x64` (same SDK, different arch — the safe kind).
 
-Why not a container/cross image for musl: `musl-tools` is a standard
-apt package on both x64 and ARM Ubuntu, so the musl cells need no
-exotic toolchain. If a musl cell proves flaky in CI, the fallback is
-`cargo-zigbuild` — not adopted pre-emptively, because it would add a
-second toolchain for a problem that may not exist.
+## First CI run: what broke, and the fix for each (2026-10-28)
+
+The first matrix run went 2/8: `linux-x64` and `linux-arm64` passed;
+the other six failed in setup/toolchain, never in quiche itself. Each
+failure changed the design above:
+
+- **Windows `link.exe` shadowing (both win cells).** The build step
+  runs under Git Bash, and Git for Windows' Unix `link` shadows MSVC's
+  linker in PATH (`/usr/bin/link: extra operand`). Fix: `build.sh`
+  pins cargo's linker to MSVC's `link.exe` via `VCToolsInstallDir`
+  (converted with `cygpath` under Git Bash), bypassing PATH entirely.
+- **Windows ARM64 picked x86_64 assembly.** `msvc-dev-cmd` defaults
+  to `arch: x64` even on ARM runners, so BoringSSL's cmake built
+  `aes-gcm-avx2-x86_64-apple.obj` for an aarch64 target and the link
+  failed with LNK1181. Fix: `arch: arm64` for the win-arm64 cell.
+- **musl C++ compiler does not exist (musl-x64).** With `CC=musl-gcc`,
+  boring-sys's cmake derives `CMAKE_CXX_COMPILER=x86_64-linux-musl-g++`,
+  which musl-tools does not ship, so cmake configure fails. Fix: musl
+  cells now build with `cargo-zigbuild` + Zig 0.15.1, which supplies
+  musl C and C++ toolchains. There is no fallback to musl-gcc: a
+  "musl" binary secretly linked against glibc's libstdc++ would be
+  worse than a loud failure.
+- **macOS `strip` refuses these dylibs (both osx cells).** Apple's
+  strip errors on indirect symbol table entries (`___error`,
+  `_strerror`, …) in the quiche dylib. Fix: `build.sh` strips Linux
+  `.so` files only; macOS dylibs ship unstripped.
+- **musl-arm64: rustc drops cdylib** (see deferred note above). No
+  toolchain fix exists at this layer; the cell is out until rustc
+  supports it.
 
 ## What the build script does
 
@@ -106,9 +135,12 @@ the port-sharing test in step 4.
 
 ## Status
 
-- `linux-x64`: built and verified locally 2026-10-28 (see below).
-- Remaining 7 cells: defined here, exercised by CI on this branch;
-  results recorded in the step-1 report before merge.
+- `linux-x64`: built and verified locally and in CI 2026-10-28.
+- `linux-arm64`: built and verified in CI 2026-10-28.
+- `win-x64`, `win-arm64`, `linux-musl-x64`, `osx-x64`, `osx-arm64`:
+  fixes for their first-run failures are in this branch; awaiting the
+  CI re-run.
+- `linux-musl-arm64`: deferred (rustc cdylib limitation, above).
 
 ## Local proof (linux-x64, 2026-10-28)
 

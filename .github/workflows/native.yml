@@ -25,19 +25,21 @@ jobs:
           - rid: win-arm64
             runner: windows-11-arm
             target: aarch64-pc-windows-msvc
+            msvc_arch: arm64
           - rid: linux-x64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - rid: linux-arm64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+          # linux-musl-arm64 is deliberately absent: rustc 1.99 drops
+          # cdylib for aarch64-unknown-linux-musl ("dropping unsupported
+          # crate type `cdylib`"), so no shared library is produced at
+          # all. See docs/native-build-matrix.md. It returns if rustc
+          # gains cdylib support for that target.
           - rid: linux-musl-x64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-            musl: true
-          - rid: linux-musl-arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
             musl: true
           - rid: osx-x64
             runner: macos-15
@@ -61,24 +63,34 @@ jobs:
         if: startsWith(matrix.runner, 'windows')
         run: choco install nasm llvm -y
 
+      # msvc_arch matters: the action defaults to x64 even on ARM
+      # runners, which makes BoringSSL's cmake pick x86_64 assembly
+      # for an aarch64 target (CI 2026-10-28).
       - name: Set up MSVC (Windows)
         if: startsWith(matrix.runner, 'windows')
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch || 'x64' }}
 
-      # musl cells: the musl C compiler for the host arch, so
-      # BoringSSL's C code links musl instead of glibc.
-      - name: Install musl-tools
+      # musl cells: zig provides the musl C and C++ toolchain that
+      # cargo-zigbuild wires up. musl-tools alone is not enough:
+      # boring-sys's cmake derives a <triple>-g++ that does not exist.
+      - name: Install Zig (musl)
         if: matrix.musl
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools cmake libclang-dev
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
 
-      - name: Install cmake and libclang (Linux, non-musl)
-        if: startsWith(matrix.runner, 'ubuntu') && !matrix.musl
+      - name: Install cargo-zigbuild (musl)
+        if: matrix.musl
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Install cmake and libclang (Linux)
+        if: startsWith(matrix.runner, 'ubuntu')
         run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake libclang-dev
 
       - name: Build quiche for ${{ matrix.rid }}
         shell: bash
-        env:
-          MUSL_CC: musl-gcc
         run: bash native/build.sh ${{ matrix.rid }}
 
       - name: Upload native artifact
