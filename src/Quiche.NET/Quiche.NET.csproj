@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Quiche.NET</AssemblyName>
+    <RootNamespace>Quiche</RootNamespace>
+    <PackageId>Quiche.NET</PackageId>
+    <Version>0.1.0-alpha.1</Version>
+    <Authors>Quiche.NET contributors</Authors>
+    <Description>C# wrapper for Cloudflare's quiche (QUIC + HTTP/3) with prebuilt native binaries. One package reference, zero native setup.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/tsuckow2/quiche-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/tsuckow2/quiche-dotnet</RepositoryUrl>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+</Project>

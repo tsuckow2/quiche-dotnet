@@ -1,0 +1,24 @@
+## .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+TestResults/
+*.nupkg
+*.snupkg
+
+## Rust / native builds
+target/
+*.so
+*.dylib
+*.dll
+!**/runtimes/**/native/*
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Editor
+.idea/
+*.swp
