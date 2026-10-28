@@ -10,6 +10,7 @@ TestResults/
 
 ## Rust / native builds
 target/
+native/out/
 *.so
 *.dylib
 *.dll

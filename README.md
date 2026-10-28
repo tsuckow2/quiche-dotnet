@@ -39,6 +39,9 @@ packaging are under active development. See the roadmap below.
    `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`,
    `linux-musl-x64`, `linux-musl-arm64`, `osx-x64`, `osx-arm64`,
    published as runtime packages consumed via `runtimes/<rid>/native/`.
+   Design: [docs/native-build-matrix.md](docs/native-build-matrix.md);
+   build script: `native/build.sh`; CI: `.github/workflows/native.yml`.
+   `linux-x64` is proven locally; the other cells are exercised by CI.
 2. **P/Invoke layer:** thin, generated-or-handwritten signatures over
    quiche's C API, pinned to a specific quiche version.
 3. **Managed API:** `QuicConnection`, `QuicStream`, listener + dialer
