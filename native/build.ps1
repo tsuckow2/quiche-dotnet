@@ -94,30 +94,20 @@ if ((Test-Path "$LlvmBin\libclang.dll") -and (-not $env:LIBCLANG_PATH)) {
     Write-Host "LIBCLANG_PATH set to $LlvmBin"
 }
 
-# Windows ARM64: build BoringSSL with the Ninja generator, not Visual
-# Studio, plus a toolchain file selecting the real ARM64 assembler.
-# boring-sys's native Windows cmake invocation never sets
-# CMAKE_GENERATOR_PLATFORM, so the VS generator defaults to x64 and
-# BoringSSL selects x86_64 assembly for an aarch64 target (LNK1181 on
-# the missing x86_64 .obj). A toolchain file pinning GENERATOR_PLATFORM
-# to ARM64 was tried first (CI 2026-10-28) and did NOT change the
-# selection -- the platform appears to be locked before the toolchain
-# file is read. Ninja has no platform concept: CMake derives the
-# target from the compiler, and the compiler is ARM64 cl.exe from the
-# arch: arm64 vcvars environment, so the arch detection has only one
-# possible answer. Ninja alone hit one more wall: CMake 4.x treats
-# MSVC's cl as the ASM compiler (CMP0194 OLD) and validates the
-# MSVC_RUNTIME_LIBRARY value against it, which fails -- and a policy
-# default in the toolchain file cannot fix that, because BoringSSL
-# pins cmake_minimum_required(VERSION 3.22), forcing CMP0194 OLD. So
-# the toolchain file (win-arm64-toolchain.cmake) instead selects
-# armasm64.exe explicitly as CMAKE_ASM_COMPILER, which bypasses
-# candidate selection entirely. (Ninja itself is installed by CI;
-# see native.yml.)
+# Windows ARM64: back to the default Visual Studio generator, plus a
+# toolchain file that disables BoringSSL assembly. Four attempts to
+# keep assembly all failed (see win-arm64-toolchain.cmake and
+# docs/native-build-matrix.md): VS picked x86_64 asm despite -AARM64,
+# Ninja hit a MSVC_RUNTIME_LIBRARY generate-step error that neither a
+# CMP0194 policy default (BoringSSL pins cmake_minimum_required 3.22)
+# nor an explicit armasm64 compiler could fix. boring-sys itself
+# disables assembly for Windows targets it considers cross-compiled;
+# this build is native (host == target), so boring-sys skips that
+# define and this file supplies it. Cost is scoped to win-arm64: C
+# crypto instead of assembly crypto, same API and wire behavior.
 if ($Rid -eq 'win-arm64') {
-    $env:CMAKE_GENERATOR = 'Ninja'
     $env:CMAKE_TOOLCHAIN_FILE = (Join-Path $ScriptDir 'win-arm64-toolchain.cmake')
-    Write-Host 'CMAKE_GENERATOR=Ninja, CMAKE_TOOLCHAIN_FILE set for win-arm64'
+    Write-Host 'CMAKE_TOOLCHAIN_FILE set for win-arm64 (OPENSSL_NO_ASM)'
 }
 
 # --- Build --------------------------------------------------------------------

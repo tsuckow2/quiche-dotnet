@@ -63,13 +63,6 @@ jobs:
         if: startsWith(matrix.runner, 'windows')
         run: choco install nasm llvm -y
 
-      # win-arm64 builds BoringSSL with Ninja (see build.ps1): the VS
-      # generator defaults to x64 and cannot be steered from a toolchain
-      # file, so it picks x86_64 assembly for an aarch64 target.
-      - name: Install Ninja (win-arm64)
-        if: matrix.rid == 'win-arm64'
-        run: choco install ninja -y
-
       # msvc_arch matters: the action defaults to x64 even on ARM
       # runners, which makes BoringSSL's cmake pick x86_64 assembly
       # for an aarch64 target (CI 2026-10-28).
