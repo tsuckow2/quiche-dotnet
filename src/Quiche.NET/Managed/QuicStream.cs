@@ -68,11 +68,16 @@ namespace Quiche
         /// windows as needed (a send that cannot proceed waits for
         /// the pump to report the stream writable). When
         /// <paramref name="fin"/> is true, a zero-length FIN frame
-        /// follows the payload and ends the stream's write side;
-        /// sending after FIN throws. Each chunk is drained to the
-        /// socket immediately: without that, the peer would never
-        /// receive data, never acknowledge it, and the flow-control
-        /// window would never reopen.
+        /// ends the stream's write side; sending after FIN throws.
+        /// Each chunk is drained to the socket immediately, except
+        /// the final chunk when a FIN follows: the FIN send's own
+        /// drain carries both, so a small message goes out as one
+        /// packet instead of two. Without the intermediate drains,
+        /// the peer would never receive data, never acknowledge it,
+        /// and the flow-control window would never reopen.
+        /// Receivers must still handle split delivery (QUIC may
+        /// split a message at any boundary): ReadAsync is a
+        /// streaming read, not a message read.
         /// </summary>
         // CS9123: &errorCode/&dummy below take addresses of locals
         // in an async method. The addresses never survive an await:
@@ -119,7 +124,20 @@ namespace Quiche
                         if (written > 0)
                         {
                             offset += (int)written;
-                            _connection.SocketDrainLocked();
+                            // Skip the drain on the final chunk when
+                            // a FIN follows: the FIN send below
+                            // drains once for both, so the message
+                            // goes out as one packet. Draining here
+                            // instead would put data and FIN in
+                            // separate packets, and a receiver that
+                            // reads between them legitimately sees
+                            // data without FIN yet.
+                            bool finalChunkWithFin =
+                                fin && offset == data.Length;
+                            if (!finalChunkWithFin)
+                            {
+                                _connection.SocketDrainLocked();
+                            }
                             continue;
                         }
                         if (written < 0)
@@ -168,18 +186,26 @@ namespace Quiche
                         // Zero-length FIN: the pointer must be valid
                         // even though no bytes are read, so use a
                         // dummy byte rather than an empty array.
+                        // This drain also carries any final data
+                        // chunk whose drain was skipped above.
                         byte dummy = 0;
                         ulong errorCode = 0;
                         nint sent = NativeMethods.quiche_conn_stream_send(
                             handle, Id, &dummy, 0, true, &errorCode);
-                        if (sent < 0)
+                        try
                         {
-                            throw new QuicException(
-                                $"Stream FIN failed (quiche error {sent}).",
-                                (long)sent, fromPeer: false);
+                            if (sent < 0)
+                            {
+                                throw new QuicException(
+                                    $"Stream FIN failed (quiche error {sent}).",
+                                    (long)sent, fromPeer: false);
+                            }
+                            _writeFinished = true;
                         }
-                        _writeFinished = true;
-                        _connection.SocketDrainLocked();
+                        finally
+                        {
+                            _connection.SocketDrainLocked();
+                        }
                     }
                 }
             }

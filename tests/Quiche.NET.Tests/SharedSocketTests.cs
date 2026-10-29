@@ -84,7 +84,11 @@ public class SharedSocketTests
         using var dialer = new QuicSocket(
             new IPEndPoint(IPAddress.Loopback, 0));
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        // ThrowsAnyAsync, not ThrowsAsync: cancellation surfaces as
+        // TaskCanceledException, which derives from (but is not
+        // exactly) OperationCanceledException, and the exact-match
+        // assertion rejects it.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
             await dialer.ConnectAsync(dialOnly.LocalEndPoint, "localhost",
                 TestClientOptions(), timeout.Token));
     }
@@ -97,13 +101,30 @@ public class SharedSocketTests
         await outbound.SendAsync(payload, fin: true, ct);
 
         QuicStream inbound = await listenerSide.AcceptStreamAsync(ct);
-        QuicReadResult received = await inbound.ReadAsync(ct);
-        Assert.Equal(payload, received.Data);
-        Assert.True(received.Fin);
+        // ReadAsync is a streaming read: a message can arrive as
+        // data without FIN followed by an empty FIN read (two
+        // packets), so accumulate until FIN rather than assuming
+        // one read returns the whole message.
+        byte[] received = await ReadUntilFinAsync(inbound, ct);
+        Assert.Equal(payload, received);
 
-        await inbound.SendAsync(received.Data, fin: true, ct);
-        QuicReadResult echo = await outbound.ReadAsync(ct);
-        Assert.Equal(payload, echo.Data);
-        Assert.True(echo.Fin);
+        await inbound.SendAsync(received, fin: true, ct);
+        byte[] echo = await ReadUntilFinAsync(outbound, ct);
+        Assert.Equal(payload, echo);
+    }
+
+    private static async Task<byte[]> ReadUntilFinAsync(
+        QuicStream stream, CancellationToken ct)
+    {
+        var all = new List<byte>();
+        while (true)
+        {
+            QuicReadResult chunk = await stream.ReadAsync(ct);
+            all.AddRange(chunk.Data);
+            if (chunk.Fin)
+            {
+                return all.ToArray();
+            }
+        }
     }
 }
