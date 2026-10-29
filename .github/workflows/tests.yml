@@ -1,0 +1,33 @@
+name: Tests
+
+# Managed-layer tests. The native matrix (native.yml) proves the
+# libraries build on all 7 RIDs; this workflow proves the C# code
+# works against one of them. It builds the linux-x64 library with
+# the same script the matrix uses, then runs the test suite; the
+# test project stages the built library into the NuGet layout
+# (runtimes/<rid>/native/) next to the test binary.
+#
+# Only ubuntu runs the managed tests for now: the test suite needs
+# a working UDP socket (it cannot run on the sandbox VM, and the
+# libp2p project's QUIC tests self-skip there for the same reason),
+# and every OS's managed code path is identical C#. Windows/macOS
+# loader coverage is future work (see the roadmap).
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (linux-x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build native library (linux-x64)
+        run: bash native/build.sh linux-x64
+      - name: Run managed tests
+        run: dotnet test tests/Quiche.NET.Tests/Quiche.NET.Tests.csproj -c Release

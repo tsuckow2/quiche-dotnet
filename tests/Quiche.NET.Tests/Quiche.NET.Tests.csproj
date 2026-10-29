@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Quiche.NET\Quiche.NET.csproj" />
+  </ItemGroup>
+
+  <!-- Stage the matrix-built native libraries into the NuGet layout
+       (runtimes/<rid>/native/) next to the test binary, so the
+       library's resolver finds them exactly as a consumer's publish
+       would. The libraries are built by native/build.sh (CI runs it
+       first; locally, run `bash native/build.sh linux-x64` — or the
+       RID you test on — before `dotnet test`). If native/out/ is
+       empty, this target copies nothing and the tests fail with
+       DllNotFoundException naming 'quiche', which is the signal to
+       build the native library first. -->
+  <Target Name="StageQuicheNative" AfterTargets="Build">
+    <ItemGroup>
+      <QuicheNativeFiles Include="..\..\native\out\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(QuicheNativeFiles)"
+          DestinationFiles="@(QuicheNativeFiles->'$(OutputPath)runtimes\%(RecursiveDir)native\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
