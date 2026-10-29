@@ -87,12 +87,27 @@ namespace Quiche.Native
         public fixed byte sa_data[14];
     }
 
-    /// <summary>Storage large enough for any socket address (128 bytes).</summary>
+    /// <summary>
+    /// Storage large enough for any socket address (128 bytes).
+    /// Layout MUST match Rust libc's sockaddr_storage exactly: the
+    /// trailing size_t (__ss_align) is what gives the struct its
+    /// 8-byte alignment on 64-bit. An earlier version of this struct
+    /// used 126 padding bytes and no align member (128 bytes but
+    /// alignment 2); that shifted every field after the first
+    /// sockaddr_storage inside SendInfo by 4-8 bytes, so quiche wrote
+    /// 8 bytes past the end of the stack-allocated SendInfo and
+    /// crashed the test host on the first quiche_conn_send. The
+    /// layout test (NativeLayoutTests) pins the offsets so this
+    /// cannot regress silently. All supported RIDs are 64-bit; a
+    /// 32-bit target would need __ss_pad2 of 122 bytes instead
+    /// (128 - 2 - 4) — see Rust libc's cfg-gated definition.
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe struct sockaddr_storage
     {
         public ushort ss_family;
-        public fixed byte __padding[126];
+        public fixed byte __ss_pad2[118];
+        public nuint __ss_align;
     }
 
     /// <summary>Time value used by SendInfo.at (send pacing hint).</summary>
