@@ -47,5 +47,11 @@ namespace Quiche.Native
 
         /// <summary>The peer violated the local stream limits.</summary>
         public const long StreamLimit = -12;
+
+        /// <summary>The specified stream was stopped by the peer.</summary>
+        public const long StreamStopped = -15;
+
+        /// <summary>The specified stream was reset by the peer.</summary>
+        public const long StreamReset = -16;
     }
 }
