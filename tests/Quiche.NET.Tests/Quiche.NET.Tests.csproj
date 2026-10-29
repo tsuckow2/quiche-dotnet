@@ -19,6 +19,15 @@
     <ProjectReference Include="..\..\src\Quiche.NET\Quiche.NET.csproj" />
   </ItemGroup>
 
+  <!-- Test-only TLS fixtures (self-signed CN=localhost, generated
+       with openssl, 10-year validity). They are trusted by nothing:
+       the tests dial with VerifyPeer=false. They exist only so the
+       listening side has a certificate chain to present. -->
+  <ItemGroup>
+    <None Include="test-cert.pem" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="test-key.pem" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Stage the matrix-built native libraries into the NuGet layout
        (runtimes/<rid>/native/) next to the test binary, so the
        library's resolver finds them exactly as a consumer's publish
