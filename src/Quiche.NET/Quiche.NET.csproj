@@ -3,6 +3,10 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
+    <!-- The P/Invoke layer is pointer-heavy by nature (quiche_conn*,
+         byte buffers, sockaddr pointers). All unsafe code lives under
+         Native/ and is reviewed as FFI surface, not application logic. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Quiche.NET</AssemblyName>
