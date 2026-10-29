@@ -47,8 +47,15 @@ packaging are under active development. See the roadmap below.
    per-cell notes: `win-arm64` builds with `OPENSSL_NO_ASM` (C crypto,
    same API) because BoringSSL's Windows ARM64 assembly path is broken
    in this toolchain combination -- see the design doc.
-2. **P/Invoke layer:** thin, generated-or-handwritten signatures over
-   quiche's C API, pinned to a specific quiche version.
+2. **P/Invoke layer:** ✅ 146 `DllImport` signatures over quiche
+   0.30.0's C API, generated from quiche's own Rust FFI source with
+   csbindgen (regenerable: `tools/bindgen`, see its README), plus
+   hand-written companions for types csbindgen cannot see (opaque
+   `Config`/`Connection`/iterators, libc `sockaddr` structs, error
+   codes) and a native library resolver (NuGet `runtimes/<rid>/native/`
+   layout, `$QUICHE_NATIVE_PATH` override). A loader smoke test
+   asserts the pinned version string. CI: `.github/workflows/tests.yml`
+   builds the linux-x64 library and runs the suite.
 3. **Managed API:** `QuicConnection`, `QuicStream`, listener + dialer
    over one shared UDP socket, connection-ID demultiplexing, TLS
    configuration (certificates, ALPN) with safe defaults.
