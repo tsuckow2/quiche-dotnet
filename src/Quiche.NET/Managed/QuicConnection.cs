@@ -77,6 +77,54 @@ namespace Quiche
         /// <summary>True once the connection has closed.</summary>
         public bool IsClosed => _closed;
 
+        /// <summary>
+        /// The peer's leaf certificate as DER bytes, or null when
+        /// the peer presented none (or the connection is closed and
+        /// its native handle is freed). This is the raw certificate
+        /// quiche received in the TLS handshake; callers parse it
+        /// (e.g., <c>new X509Certificate2(der)</c>) and validate it
+        /// for their own identity story — Quiche.NET itself performs
+        /// no certificate-to-identity mapping.
+        /// Two behaviors callers must know, both measured against
+        /// quiche 0.30.0: with verification off, the peer's
+        /// certificate is still readable here on the dial side
+        /// (the server always presents its certificate); but a
+        /// quiche server with verification off never requests a
+        /// client certificate, so the server side of a connection
+        /// reads null here even when the dialer loaded one.
+        /// </summary>
+        public byte[]? PeerCertificate
+        {
+            get
+            {
+                lock (_socket.Gate)
+                {
+                    if (_handlePtr == IntPtr.Zero)
+                    {
+                        return null;
+                    }
+                    unsafe
+                    {
+                        Connection* handle =
+                            (Connection*)_handlePtr.ToPointer();
+                        byte* derPtr = null;
+                        nuint derLen = 0;
+                        NativeMethods.quiche_conn_peer_cert(
+                            handle, &derPtr, &derLen);
+                        if (derPtr == null || derLen == 0)
+                        {
+                            return null;
+                        }
+                        // The pointer is borrowed from the
+                        // connection; copy before returning.
+                        byte[] der = new byte[(int)derLen];
+                        Marshal.Copy((IntPtr)derPtr, der, 0, (int)derLen);
+                        return der;
+                    }
+                }
+            }
+        }
+
         internal IntPtr NativeHandle => _handlePtr;
 
         internal object SocketGate() => _socket.Gate;

@@ -26,6 +26,8 @@
   <ItemGroup>
     <None Include="test-cert.pem" CopyToOutputDirectory="PreserveNewest" />
     <None Include="test-key.pem" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="client-cert.pem" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="client-key.pem" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Stage the matrix-built native libraries into the NuGet layout

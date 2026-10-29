@@ -31,6 +31,23 @@ namespace Quiche
         public string? TrustedCaFile { get; set; }
 
         /// <summary>
+        /// PEM file holding the certificate chain this side presents
+        /// when the peer requests a client certificate. Must be set
+        /// together with <see cref="PrivateKeyFile"/>; either one
+        /// alone is a configuration error. Null (the default) means
+        /// no client certificate is presented.
+        /// Note: the certificate is only presented if the peer asks
+        /// for one. A quiche server with verification off never
+        /// asks, so the certificate is then unused; peers that do
+        /// ask (libp2p implementations, verification-on servers)
+        /// receive it.
+        /// </summary>
+        public string? CertificateFile { get; set; }
+
+        /// <summary>PEM file holding the private key for <see cref="CertificateFile"/>.</summary>
+        public string? PrivateKeyFile { get; set; }
+
+        /// <summary>
         /// How long a connection may sit idle before quiche closes
         /// it. Default: 30 seconds. <see cref="TimeSpan.Zero"/>
         /// disables the idle timeout (connections then live until

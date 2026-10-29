@@ -56,6 +56,32 @@ namespace Quiche.Native
                             $"Failed to load trusted CA file '{caFile}' (quiche error {rc}).");
                     }
                 }
+                bool hasCert = !string.IsNullOrEmpty(options.CertificateFile);
+                bool hasKey = !string.IsNullOrEmpty(options.PrivateKeyFile);
+                if (hasCert != hasKey)
+                {
+                    throw new QuicException(
+                        "QuicClientOptions.CertificateFile and PrivateKeyFile must be set together.");
+                }
+                if (hasCert)
+                {
+                    int rc = Utf8Util.WithUtf8(options.CertificateFile!, ptr =>
+                        NativeMethods.quiche_config_load_cert_chain_from_pem_file(
+                            config.Handle, ptr));
+                    if (rc != 0)
+                    {
+                        throw new QuicException(
+                            $"Failed to load certificate chain '{options.CertificateFile}' (quiche error {rc}).");
+                    }
+                    rc = Utf8Util.WithUtf8(options.PrivateKeyFile!, ptr =>
+                        NativeMethods.quiche_config_load_priv_key_from_pem_file(
+                            config.Handle, ptr));
+                    if (rc != 0)
+                    {
+                        throw new QuicException(
+                            $"Failed to load private key '{options.PrivateKeyFile}' (quiche error {rc}).");
+                    }
+                }
             }
             catch
             {
