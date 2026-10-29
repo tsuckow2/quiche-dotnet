@@ -56,12 +56,17 @@ packaging are under active development. See the roadmap below.
    layout, `$QUICHE_NATIVE_PATH` override). A loader smoke test
    asserts the pinned version string. CI: `.github/workflows/tests.yml`
    builds the linux-x64 library and runs the suite.
-3. **Managed API:** `QuicConnection`, `QuicStream`, listener + dialer
-   over one shared UDP socket, connection-ID demultiplexing, TLS
-   configuration (certificates, ALPN) with safe defaults.
-4. **Tests:** unit tests for the managed layer, interop tests against a
-   real quiche peer, and a port-sharing test proving listener + dialer
-   coexist on one socket.
+3. **Managed API:** ✅ `QuicSocket` (one UDP socket that is
+   simultaneously listener and dialer, pump thread, connection-ID
+   demultiplexing), `QuicConnection`, `QuicStream`, and TLS with safe
+   defaults (verification on, system roots unless a CA file is given,
+   ALPN `quiche-dotnet`, 30 s idle timeout, transport parameters set
+   explicitly since quiche's own defaults allow no streams). Proven
+   by a shared-socket echo test: two sockets each dial and accept
+   with echo both ways, green on Forge (2026-10-28).
+4. **Tests:** unit tests for the managed layer and interop tests
+   against a real quiche peer (the port-sharing proof landed with
+   step 3's echo test).
 5. **NuGet publishing:** versioned releases, release notes, and
    symbol packages.
 
